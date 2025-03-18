@@ -1,0 +1,473 @@
+---
+title: '6'
+output:
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tableone)
+library(nnet)
+library(tidyr)
+library(broom)
+library(survey)
+library(broom)
+library(svyVGAM) 
+library(car)
+
+```
+```{r}
+library(haven)
+cchs_2017_2018 <- read.csv("cchs_2017-2018.csv")
+# Read the SAS dataset
+sas_data <- read_sas("bsw.sas7bdat")
+
+# Write to CSV
+# Export to CSV
+#write.csv(sas_data, "D:/_uoft_1/5 master 1/chl5207/practicum/output_file.csv", row.names = FALSE)
+
+
+```
+
+```{r}
+colnames(sas_data)[1] <- "id"
+```
+Small or empty cells in categorical variables can cause numerical issues. erase not stated
+```{r}
+
+interested <- cchs_2017_2018 %>%
+  select("ADM_RNO" | "CCC_065" | "CCC_075" | "CCC_085" | "CCC_135" | "CCC_195" | "WTS_M" | "FSCDVHF2" | "DHH_SEX" | "DHHGAGE" | "EHG2DVH3" | "GEO_PRV" | "INCDGHH" | "EHG2DVH3" | "DHHDGLVG") %>%
+  rename(
+    id = ADM_RNO,
+    high_blood_pressure = CCC_065,
+    high_cholesterol = CCC_075,
+    heart_disease = CCC_085,
+    diagnosed_cancer = CCC_135,
+    mood_disorder = CCC_195,
+    food_security_status = FSCDVHF2,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    highest_education = EHG2DVH3,
+    province_residence = GEO_PRV,
+    household_income = INCDGHH,
+    living_arrangement = DHHDGLVG
+  )
+
+# Province
+table_1_data <- interested %>%
+  mutate(
+    province_residence = case_when(
+      province_residence == 61 ~ "NORTHWEST TERRITORIES",
+      province_residence == 60 ~ "YUKON",
+      province_residence == 46 ~ "MANITOBA",
+      province_residence == 59 ~ "BRITISH COLUMBIA",
+      province_residence == 62 ~ "NUNAVUT",
+      province_residence == 47 ~ "SASKATCHEWAN",
+      province_residence == 35 ~ "ONTARIO",
+      province_residence == 24 ~ "QUEBEC",
+      province_residence == 11 ~ "PRINCE EDWARD ISLAND",
+      province_residence == 12 ~ "NOVA SCOTIA",
+      province_residence == 48 ~ "ALBERTA",
+      province_residence == 10 ~ "NEWFOUNDLAND AND LABRADOR",
+      province_residence == 13 ~ "NEW BRUNSWICK",
+      TRUE ~ "UNKNOWN"  # Handle unexpected codes or missing values
+    )
+  )
+
+# Recode household income
+table_1_data <- table_1_data %>%
+  mutate(
+    household_income = case_when(
+      household_income == 1 ~ "No income or less than $20,000",
+      household_income == 2 ~ "$20,000 to $39,999",
+      household_income == 3 ~ "$40,000 to $59,999",
+      household_income == 4 ~ "$60,000 to $79,999",
+      household_income == 5 ~ "$80,000 or more",
+      household_income == 9 ~ "Not stated",
+      TRUE ~ "Unknown"  # Handle unexpected or missing values
+    ),
+    # Recode sex
+    sex = case_when(
+      sex == 1 ~ "Male",
+      sex == 2 ~ "Female",
+      TRUE ~ NA_character_  # Handle unexpected or missing values
+    )
+  )
+
+
+# Age
+table_1_data <- table_1_data %>% filter(age > 2)
+table_1_data <- table_1_data %>%
+  mutate(
+    age_group = case_when(
+      age %in% c(3,4,5,6) ~ "Age between 18 and 34",
+      age %in% c(7,8,9) ~ "Age between 35 and 49",
+      age %in% c(10,11,12) ~ "Age between 50 and 64",
+      age %in% c(13,14,15,16) ~ "Age 65 and older"
+    )
+  )
+
+# Education
+table_1_data <- table_1_data %>%
+  mutate(
+    highest_education = case_when(
+      highest_education == 1 ~ "Less than secondary school graduation",
+      highest_education == 2 ~ "Secondary school graduation, no post-secondary education",
+      highest_education == 3 ~ "Post-secondary certificate diploma or university degree",
+      highest_education == 9 ~ "Not stated",
+      TRUE ~ "Unknown"  # Handle unexpected or missing values
+    ),
+    
+    # Recode food security status
+    food_security_status = case_when(
+      food_security_status == 0 ~ "Secure",
+      food_security_status == 1 ~ "Marginally",
+      food_security_status == 2 ~ "Moderately",
+      food_security_status == 3 ~ "Severely",
+      food_security_status == 9 ~ "Not stated",
+      TRUE ~ "Unknown"  # Handle unexpected or missing values
+    )
+  )
+
+
+# Living arrangement should be no child,6,7
+table_1_data <- table_1_data %>%
+  mutate(living_arrangement = case_when(
+    living_arrangement == 1 ~ "Unattached individual living alone",
+    living_arrangement == 2 ~ "Unattached individual living with others",
+    living_arrangement == 3 ~ "Individual living with spouse/partner",
+    living_arrangement == 4 ~ "Parent living with spouse/partner and children",
+    living_arrangement == 5 ~ "Single parent living with children",
+    living_arrangement == 6 ~ "Child living with a single parent with or without siblings",
+    living_arrangement == 7 ~ "Child living with two parents with or without siblings",
+    living_arrangement == 8 ~ "Other",
+    living_arrangement > 9 ~ "Not stated",  # Values greater than 9
+    TRUE ~ NA_character_  # Handle any unexpected cases or missing values
+  ))
+# Chronic conditions
+table_1_data <- table_1_data %>%
+  mutate(
+    high_blood_pressure = case_when(
+      high_blood_pressure == 1 ~ "Yes",
+      high_blood_pressure == 2 ~ "No",
+      high_blood_pressure >= 3 ~ "Not stated"  # Values >= 3 are set to NA
+    ),
+    high_cholesterol = case_when(
+      high_cholesterol == 1 ~ "Yes",
+      high_cholesterol == 2 ~ "No",
+      high_cholesterol >= 3 ~ "Not stated"
+    ),
+    heart_disease = case_when(
+      heart_disease == 1 ~ "Yes",
+      heart_disease == 2 ~ "No",
+      heart_disease >= 3 ~ "Not stated"
+    ),
+    diagnosed_cancer = case_when(
+      diagnosed_cancer == 1 ~ "Yes",
+      diagnosed_cancer == 2 ~ "No",
+      diagnosed_cancer >= 3 ~ "Not stated"
+    ),
+    mood_disorder = case_when(
+      mood_disorder == 1 ~ "Yes",
+      mood_disorder == 2 ~ "No",
+      mood_disorder >= 3 ~ "Not stated"
+    )
+  )
+
+
+table_1_data <- table_1_data %>%
+  select(
+    id, WTS_M, sex, age_group, highest_education, province_residence, household_income, 
+    food_security_status, high_blood_pressure, living_arrangement, high_cholesterol, 
+    heart_disease, diagnosed_cancer, mood_disorder
+  )
+```
+
+```{r}
+merged_data <- merge(table_1_data, sas_data, by = "id")
+log_1_data <- merged_data %>%
+  mutate(food_security_status = case_when(
+    food_security_status == "Secure" ~ "Secure",
+    food_security_status %in% c("Marginally", "Moderately", "Severely") ~ "Insecure"
+  ))%>%
+  filter(if_all(everything(), ~ . != "Not stated")) %>%
+  filter(!grepl("^Child", living_arrangement))
+log_1_data_bi <- log_1_data %>%
+  mutate(
+    region = case_when(
+      province_residence %in% c("NEW BRUNSWICK", "NOVA SCOTIA", "PRINCE EDWARD ISLAND", "NEWFOUNDLAND AND LABRADOR") ~ "Atlantic",
+      province_residence %in% c("ONTARIO", "QUEBEC") ~ "Central",
+      province_residence %in% c("MANITOBA", "SASKATCHEWAN", "ALBERTA") ~ "Prairies",
+      province_residence %in% c("YUKON", "NORTHWEST TERRITORIES", "NUNAVUT") ~ "Northern",
+      TRUE ~ "Westcoast"
+    )
+  )
+log_1_data_bi <- log_1_data_bi  %>%
+  mutate(
+    food_security_status = factor(food_security_status, levels = c("Secure", "Insecure")),
+    sex = relevel(as.factor(sex), ref = "Female"),
+    age_group = relevel(as.factor(age_group), ref = "Age between 18 and 34"),
+    highest_education = relevel(as.factor(highest_education), ref = "Less than secondary school graduation"),
+    region = relevel(as.factor(region), ref = "Northern"),
+    household_income = relevel(as.factor(household_income), ref = "No income or less than $20,000"),
+    high_blood_pressure = relevel(as.factor(high_blood_pressure), ref = "No"),
+    living_arrangement = relevel(as.factor(living_arrangement), ref = "Unattached individual living alone"),
+    high_cholesterol = relevel(as.factor(high_cholesterol), ref = "No"),
+    heart_disease = relevel(as.factor(heart_disease), ref = "No"),
+    diagnosed_cancer = relevel(as.factor(diagnosed_cancer), ref = "No"),
+    mood_disorder = relevel(as.factor(mood_disorder), ref = "No")
+  )
+
+```
+```{r}
+log_1_data_sum<-log_1_data_bi %>%  mutate(    high_blood_pressure = as.numeric(high_blood_pressure == "Yes"),
+    high_cholesterol = as.numeric(high_cholesterol == "Yes"),
+    heart_disease = as.numeric(heart_disease == "Yes"),
+    diagnosed_cancer = as.numeric(diagnosed_cancer == "Yes"),
+    mood_disorder = as.numeric(mood_disorder == "Yes"),
+num_chronic = high_blood_pressure + high_cholesterol + heart_disease + diagnosed_cancer + mood_disorder,
+num_chronic_cat = case_when(
+  num_chronic == 0~"0",
+  num_chronic == 1~"1",
+  TRUE ~"2+"
+))
+
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+df_summary <- log_1_data_sum %>%
+  group_by(food_security_status, num_chronic_cat) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(food_security_status) %>%
+  mutate(percent = count / sum(count) * 100)
+
+png("food_security_chronic_conditions.png", width = 800, height = 600, res = 150)
+# Create the bar plot
+ggplot(df_summary, aes(x = food_security_status, y = percent, fill = num_chronic_cat)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Food Security Status", y = "Percentage of Individuals", fill = "Number of Chronic Conditions", title = "Figure.2 Distribution of Chronic Conditions by Food Security Status") +
+  scale_fill_manual(values = c("#FFF2CC", "#E6F7E6", "yellow")) + # Adjust colors to match the provided plot
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+#binom_model
+design <- svrepdesign(data = log_1_data_sum, 
+                      weights = ~fwgt, 
+                      repweights = "BSW[1-1000]",
+                      type = "bootstrap")
+```
+```{r}
+binom_model <- svyglm(
+  food_security_status ~sex + age_group + highest_education +living_arrangement+
+                 region + household_income + high_blood_pressure +heart_disease+diagnosed_cancer+mood_disorder+high_cholesterol,
+                          design = design, 
+                          family = quasibinomial())
+
+summary(binom_model)
+ci <- confint(binom_model)  # 95% CI
+model_summary <- summary(binom_model)
+# Extract coefficients, standard errors, and p-values
+coef_summary <- model_summary$coefficients
+
+# Combine results into a data frame
+results_df_1 <- data.frame(
+  Predictor = rownames(coef_summary),
+  Estimate_adj = exp(coef_summary[, 1]),  # Coefficients
+  `2.5% CI adj` = exp(ci[, 1]),  # Lower 95% CI
+  `97.5% CI adj` = exp(ci[, 2]),  # Upper 95% CI
+  `p-value_adj` = coef_summary[, 4]  # P-values
+)
+
+# Print results
+print(results_df_1)
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+
+# Remove category prefixes from Predictor column
+results_df_1 <- results_df_1 %>%
+  mutate(Predictor = str_replace(Predictor, "^.*?(?=[A-Z])", ""))  # Keep only the part after category prefix
+#write.csv(results_df_1, file = "table3 cat model.csv", row.names = FALSE)
+```
+
+```{r}
+# Define the predictors
+predictors <- c("sex", "age_group", "highest_education", "living_arrangement", 
+                "region", "household_income", "high_blood_pressure", 
+                "heart_disease", "diagnosed_cancer", "mood_disorder","high_cholesterol")
+
+# Create an empty data frame to store results
+results_df_2 <- data.frame(
+  Predictor = character(),
+  Estimate_un = numeric(),
+  `2.5% CI un` = numeric(),
+  `97.5% CI un` = numeric(),
+  `p-value` = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each predictor and fit a separate model
+for (var in predictors) {
+  formula <- as.formula(paste("food_security_status ~", var))
+  
+  model <- svyglm(formula, 
+                  design = design, 
+                  family = quasibinomial(),
+                  maxit = 100)
+  
+  # Extract model coefficients and CI
+  coef_summary <- summary(model)$coefficients
+  ci <- confint(model)  # 95% confidence intervals
+  
+  # Remove intercept (first row)
+  coef_df_2 <- data.frame(
+    Predictor = rownames(coef_summary)[-1],  # Exclude intercept
+    Estimate_un = exp(coef_summary[-1, 1]),  # Coefficient estimate
+    `2.5% CI un` = exp(ci[-1, 1]),  # Lower CI bound
+    `97.5% CI un` = exp(ci[-1, 2]),  # Upper CI bound
+    `p-value` = coef_summary[-1, 4]  # P-value
+  )
+  
+  # Append to results data frame
+  results_df_2 <- rbind(results_df_2, coef_df_2)
+}
+
+# Print final table
+print(results_df_2)
+#write.csv(results_df_2, file = "table2 unadj model.csv", row.names = FALSE)
+```
+```{r}
+results_df_2 <- results_df_2 %>%
+  mutate(Predictor = str_replace(Predictor, "^.*?(?=[A-Z])", ""))  # Keep only the part after category prefix
+#write.csv(results_df_2, file = "table2 unadj model.csv", row.names = FALSE)
+```
+
+```{r}
+merged_df <- results_df_1 %>%
+  inner_join(results_df_2, by = "Predictor") %>%
+  mutate(
+    unadjusted = paste0(
+      round(Estimate_un, 4), 
+      " (", round(X2.5..CI.un, 4), ", ", round(X97.5..CI.un, 4), ")"
+    ),
+    adjusted = paste0(
+      round(Estimate_adj, 4), 
+      " (", round(X2.5..CI.adj, 4), ", ", round(X97.5..CI.adj, 4), ")"
+    )
+  ) %>%
+  select(Predictor, unadjusted, adjusted, `p.value_adj`)
+merged_df <- merged_df %>%
+  mutate(Predictor = str_replace(Predictor, "^.*?(?=[A-Z])", ""))  # Keep only the part after category prefix
+#write.csv(merged_df, file = "table model.csv", row.names = FALSE)
+```
+
+
+People with mood disorders have 3.7 times higher odds of being food insecure compared to those without mood disorders.
+
+```{r}
+binom_model <- svyglm(
+  food_security_status ~ num_chronic_cat + sex + age_group + highest_education + living_arrangement+
+    region + household_income ,
+  design = design, 
+  family = quasibinomial()
+)
+ci <- confint(binom_model)  # 95% CI
+model_summary <- summary(binom_model)
+# Extract coefficients, standard errors, and p-values
+coef_summary <- model_summary$coefficients
+
+# Combine results into a data frame
+results_df_3 <- data.frame(
+  Predictor = rownames(coef_summary),
+  Estimate_adj = exp(coef_summary[, 1]),  # Coefficients
+  `2.5% CI adj` = exp(ci[, 1]),  # Lower 95% CI
+  `97.5% CI adj` = exp(ci[, 2]),  # Upper 95% CI
+  `p-value_adj` = coef_summary[, 4]  # P-values
+)
+
+# Print results
+print(results_df_3)
+```
+```{r}
+results_df_3 <- results_df_3 %>%
+  mutate(Predictor = str_replace(Predictor, "^.*?(?=[A-Z])", ""))  # Keep only the part after category prefix
+#write.csv(results_df_3, file = "table4 numerical model.csv", row.names = FALSE)
+```
+
+
+```{r}
+# Define the predictors
+predictors <- c("sex", "age_group", "highest_education", "living_arrangement", 
+                "region", "household_income", "num_chronic_cat")
+
+# Create an empty data frame to store results
+results_df_4 <- data.frame(
+  Predictor = character(),
+  Estimate_un = numeric(),
+  `2.5% CI un` = numeric(),
+  `97.5% CI un` = numeric(),
+  `p-value` = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop over each predictor and fit a separate model
+for (var in predictors) {
+  formula <- as.formula(paste("food_security_status ~", var))
+  
+  model <- svyglm(formula, 
+                  design = design, 
+                  family = quasibinomial(),
+                  maxit = 100)
+  
+  # Extract model coefficients and CI
+  coef_summary <- summary(model)$coefficients
+  ci <- confint(model)  # 95% confidence intervals
+  
+  # Remove intercept (first row)
+  coef_df_4 <- data.frame(
+    Predictor = rownames(coef_summary)[-1],  # Exclude intercept
+    Estimate_un = exp(coef_summary[-1, 1]),  # Coefficient estimate
+    `2.5% CI un` = exp(ci[-1, 1]),  # Lower CI bound
+    `97.5% CI un` = exp(ci[-1, 2]),  # Upper CI bound
+    `p-value` = coef_summary[-1, 4]  # P-value
+  )
+  
+  # Append to results data frame
+  results_df_4 <- rbind(results_df_4, coef_df_4)
+  results_df_4 <- results_df_4 %>%
+  mutate(Predictor = str_replace(Predictor, "^.*?(?=[A-Z])", ""))  # Keep only the part after category prefix
+}
+```
+```{r}
+library(dplyr)
+library(stringr)
+merged_df <- results_df_3 %>%
+  inner_join(results_df_4, by = "Predictor") %>%
+  mutate(
+    unadjusted = paste0(
+      round(Estimate_un, 4), 
+      " (", round(X2.5..CI.un, 4), ", ", round(X97.5..CI.un, 4), ")"
+    ),
+    adjusted = paste0(
+      round(Estimate_adj, 4), 
+      " (", round(X2.5..CI.adj, 4), ", ", round(X97.5..CI.adj, 4), ")"
+    )
+  ) %>%
+  select(Predictor, unadjusted, adjusted, `p.value_adj`)
+merged_df <- merged_df %>%
+  mutate(Predictor = str_replace(Predictor, "^.*?(?=[A-Z])", ""))  # Keep only the part after category prefix
+write.csv(merged_df, file = "table model num.csv", row.names = FALSE)
+```
+
+```{r}
+vif(binom_model)
+```
+

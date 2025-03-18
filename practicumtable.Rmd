@@ -1,0 +1,150 @@
+---
+title: 'table1'
+output:
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: true
+---
+
+```{r}
+library(knitr)
+library(kableExtra)
+library(readr)
+library(dplyr)
+library(tableone)
+library(nnet)
+library(tidyr)
+library(broom)
+library(survey)
+library(forcats)
+library(tibble)
+```
+##table 1
+```{r}
+Table_final <- read.csv("table1 Stratified by Food Security Status.csv")
+Table_num <- read.csv("table4 numerical model.csv")
+```
+
+Table_final <- Table_final[1:39,1:6]
+Table_final[is.na(Table_final)] <- ""
+Table_final[Table_final == ""] <- " "
+Table_final <- lapply(Table_final, function(x) gsub("%", "\\%", x, fixed = TRUE))  # Escape percent signs
+Table_final <- lapply(Table_final, function(x) gsub("$", "\\$", x, fixed = TRUE))  # Escape dollar signs
+Table_final <- as.data.frame(Table_final)
+
+
+kable(Table_final, format = "latex", booktabs = TRUE, align = "lccccc", escape = FALSE) %>%
+column_spec(1, bold = TRUE, background = "#F0FAF0") %>%
+column_spec(2:6, background = "#F0FAF0") %>%
+row_spec(0, bold = TRUE, background = "#E6F7E6") %>%
+pack_rows("Sex (n, %)", 2, 3, background = "#FFF2CC", bold = TRUE)%>%
+pack_rows("Age group (n, %)", 4, 7, background = "#FFF2CC", bold = TRUE) %>%
+pack_rows("Living arrangement (n, %)", 8, 13, background = "#FFF2CC", bold = TRUE) %>%
+pack_rows("Highest Education (n, %)", 14, 16, background = "#FFF2CC", bold = TRUE) %>%
+pack_rows("Province Residence (n, %)", 17, 29, background = "#FFF2CC", bold = TRUE) %>%
+pack_rows("Household income (n, %)", 30, 34, background = "#FFF2CC", bold = TRUE) %>%
+pack_rows("Chronic Conditions (n, %)", 35, 39, background = "#FFF2CC", bold = TRUE) %>%
+kable_styling(
+latex_options = c("striped", "hold_position", "scale_down"), position = "left"
+) %>%
+add_header_above(
+c("Table 1: Sociodemographic Characteristics and Chronic Conditions of Adults Aged 18 Years and Older by Household Food Security Status, 2017-2018" = 3),
+escape = FALSE
+)
+
+
+```{r}
+library(webshot) 
+temp_html <- tempfile(fileext = ".html")
+kable(Table_final, format = "html", booktabs = TRUE, align = "lccccc", escape = FALSE) %>%
+  column_spec(1,color = "black", bold = TRUE, background = "white") %>%
+  column_spec(2:6, color = "black", background = "white") %>%
+  row_spec(0, color = "black", bold = TRUE, background = "#E6F7E6") %>%
+  pack_rows("Sex (n, %)", 2, 3, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  pack_rows("Age group (n, %)", 4, 7, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  pack_rows("Living Arrangement (n, %)", 8, 13, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Highest Education (n, %)", 14, 16, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Province Residence (n, %)", 17, 29, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Household Income (n, %)", 30, 34, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Chronic Conditions (n, %)", 35, 39, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"), position = "left"
+  ) %>%
+  add_header_above(
+    c("Table 1: Sociodemographic Characteristics and Chronic Conditions of Adults Aged 18 Years and Older by Household Food Security Status, 2017-2018" = 6),
+    escape = FALSE
+  ) %>%
+  save_kable(temp_html)  # Save table as HTML
+
+# Convert HTML Table to JPG
+output_jpg <- "table_output.jpg"
+webshot(temp_html, file = output_jpg, vwidth = 1200, vheight = 800, delay = 0.2)
+
+
+```
+## table 2
+```{r}
+Table_model1 <- read.csv("table model.csv")
+Table_model1 <- Table_model1 %>%
+  mutate(`p.value_adj` = ifelse(`p.value_adj` < 0.01, "<0.01", round(`p.value_adj`, 3)))  # Round others to 3 decimals
+Table_model1 <- Table_model1 %>%
+  rename(`Unadjusted odds ratio (95% CI)` = unadjusted, `Adjusted odds ratio (95% CI)` = adjusted, `p-value (adjusted)` = p.value_adj)
+
+temp_html <- tempfile(fileext = ".html")
+kable(Table_model1, format = "html", booktabs = TRUE, align = "lccc", escape = FALSE) %>%
+  column_spec(1:4, color = "black", background = "white") %>%
+  row_spec(0, color = "black", bold = TRUE, background = "white") %>%
+  pack_rows("Sex (Ref Female)", 1,1, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  pack_rows("Age group (Ref Age between 18 and 34)", 2, 4, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  pack_rows("Living Arrangement (Ref Unattached individual living alone)", 7, 11, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Highest Education (Ref Less than secondary school graduation)", 5, 6, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Region (Ref Northern)", 12, 15, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Household Income (Ref No income or less than $20,000)", 16, 19, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Chronic Conditions (Ref No)", 20, 24, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"), position = "left"
+  ) %>%
+  add_header_above(
+    c("Table 2: Association Between Sociodemographic Characteristics, Chronic Conditions, and Food Security Status" = 4),
+    escape = FALSE
+  ) %>%
+  save_kable(temp_html)  # Save table as HTML
+
+# Convert HTML Table to JPG
+output_jpg <- "table_model.jpg"
+webshot(temp_html, file = output_jpg, vwidth = 1200, vheight = 800, delay = 0.2)
+```
+
+## table 3
+```{r}
+library(webshot) 
+Table_model2 <- read.csv("table model num.csv")
+Table_model2 <- Table_model2 %>%
+  mutate(`p.value_adj` = ifelse(`p.value_adj` < 0.01, "<0.01", round(`p.value_adj`, 3)))  # Round others to 3 decimals
+Table_model2 <- Table_model2 %>%
+  rename(`Unadjusted odds ratio (95% CI)` = unadjusted, `Adjusted odds ratio (95% CI)` = adjusted, `p-value (adjusted)` = p.value_adj)
+
+temp_html <- tempfile(fileext = ".html")
+kable(Table_model2, format = "html", booktabs = TRUE, align = "lccc", escape = FALSE) %>%
+  column_spec(1:4, color = "black", background = "white") %>%
+  row_spec(0, color = "black", bold = TRUE, background = "white") %>%
+  pack_rows("Sex (Ref Female)", 1,1, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  pack_rows("Age group (Ref Age between 18 and 34)", 2, 4, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  pack_rows("Living Arrangement (Ref Unattached individual living alone)", 7, 11, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Highest Education (Ref Less than secondary school graduation)", 5, 6, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Region (Ref Northern)", 12, 15, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Household Income (Ref No income or less than $20,000)", 16, 19, background = "#E6F7E6", color = "black",bold = TRUE) %>%
+  pack_rows("Chronic Conditions (Ref 0 chronic)", 20, 21, background = "#E6F7E6",color = "black", bold = TRUE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"), position = "left"
+  ) %>%
+  add_header_above(
+    c("Table 3: Association Between Sociodemographic Characteristics, Number of Chronic Conditions, and Food Security Status" = 4),
+    escape = FALSE
+  ) %>%
+  save_kable(temp_html)  # Save table as HTML
+
+# Convert HTML Table to JPG
+output_jpg <- "table_model_num.jpg"
+webshot(temp_html, file = output_jpg, vwidth = 1200, vheight = 800, delay = 0.2)
+```
